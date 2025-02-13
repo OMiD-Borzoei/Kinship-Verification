@@ -96,7 +96,7 @@ class ConvolutionGGN(nn.Module):
         self.mlp_input_dim_child = sum(self.h_dim_list[1:])
 
         self.MLP_layer = MLP_layer(
-            self.mlp_input_dim_parent, self.mlp_input_dim_child, self.output_dim)
+            self.mlp_input_dim_parent, self.output_dim)
 
     def forward(self, g:DGLGraph, X:Tensor, E:Tensor):
         H:Tensor =X  

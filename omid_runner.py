@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch
 from torch.utils.data import DataLoader
 from utils_residual_gnn import set_seed, seed_worker, set_device, reset_weights, myoptimizer, Criterion
-from utils_residual_gnn import train_residual_vgg, evaluate_metric, detailed_evaluate_metric
+from utils_residual_gnn import train_residual_vgg, evaluate_metric
 from utils_residual_gnn import save_checkpoint, load_checkpoint
 from utils_residual_gnn import features_collate4metric as collate
 
