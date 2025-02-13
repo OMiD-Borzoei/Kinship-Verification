@@ -11,7 +11,6 @@ from torch.autograd import Variable
 import dgl
 from dgl.data.utils import Subset
 
-from center_contrastive_loss import CenterContrastiveLoss
 from center_loss import CenterLoss
 import settings as st
 
