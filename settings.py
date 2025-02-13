@@ -11,10 +11,6 @@ CCL_STARTING_WEIGHT = 0.01
 
 ORDER = [1, 2, 3, 4, 5]  # [1, 2, 3, 4, 5]
 
-# I = 0
-# Second Time:
-# I = 8
-# Third Time:
 I = 0
 
 config = {

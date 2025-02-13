@@ -1,12 +1,9 @@
 import numpy as np
 import time
-import pickle
 import gc
 
 import os
 os.environ['DGLBACKEND'] = 'pytorch'  # tell DGL what backend to use
-# os.environ['CUDA_LAUNCH_BLOCKING']="1"
-# os.environ['TORCH_USE_CUDA_DSA'] = "1"
 
 import torch.nn as nn
 import torch

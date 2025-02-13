@@ -41,7 +41,4 @@ class CenterLoss(nn.Module):
         dist = distmat * mask.float()
         loss = dist.clamp(min=1e-12, max=1e+12).sum() / batch_size
 
-        # print(f'{(sum(self.centers[0])/len(self.centers[0])).item():.5f}')
-        # print(f'{(sum(self.centers[1])/len(self.centers[1])).item():.5f}\n')
-
         return loss
