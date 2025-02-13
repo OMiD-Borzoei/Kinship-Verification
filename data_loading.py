@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset
 
-
 class KinFeaturetDataset(Dataset):
 
     def __init__(self, csv_metadata_file, features_file, isTrain=True, fold_num=1):
