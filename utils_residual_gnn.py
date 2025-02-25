@@ -241,6 +241,141 @@ def load_checkpoint(model, optimizer, load_path):
 
     return model, optimizer, epoch
 
+def train_ensemble(fold_num, models, mlp, train_loader, optimizers, mlp_optimizer, schedulers, n_epochs, criterion, device, detail_path, ccl_weight=1.0, bce_weight=1.0):
+    for epoch in range(n_epochs):
+        for model in models:
+            model.train()
+        mlp.train()
+
+        epoch_loss = 0
+        epoch_train_acc = 0
+        nb_data = 0
+
+        for batch_x1, batch_x2, batch_labels, parent_ids, child_ids in train_loader:
+            batch_x1, batch_x2, batch_labels = batch_x1.to(device), batch_x2.to(device), batch_labels.to(device)
+            gt_all = batch_labels.view(-1, 1).float()
+
+            parent_ids, child_ids = parent_ids.to(device), child_ids.to(device)
+            image_ids = torch.cat((parent_ids, child_ids), dim=0)
+            target = image_ids
+
+            # Forward pass for all models
+            model_outputs = []
+            model_losses = []
+
+            for i, model in enumerate(models):
+                optimizers[i].zero_grad()  # Zero grads at the start
+
+                batch_scores, f_parent, f_child, family_id_dict, center_feature = model(batch_x1, batch_x2)
+                model_outputs.append(batch_scores)
+                
+                
+                # Check if any intermediate results have NaNs or Infs
+                if torch.isnan(batch_scores).any() or torch.isinf(batch_scores).any():
+                    print(f"NaN or Inf detected in batch_scores: {batch_scores}")
+                if torch.isnan(f_parent).any() or torch.isinf(f_parent).any():
+                    print(f"NaN or Inf detected in f_parent: {f_parent}")
+                if torch.isnan(f_child).any() or torch.isinf(f_child).any():
+                    print(f"NaN or Inf detected in f_child: {f_child}")
+
+                f = torch.cat((f_parent, f_child), dim=0)
+                p1, p2 = f_parent * gt_all, f_child * gt_all
+                n1, n2 = f_parent * (1.0 - gt_all), f_child * (1.0 - gt_all)
+                simi = torch.cosine_similarity(f_parent, f_child, dim=1).view(-1, 1)
+
+                loss1 = criterion.criterion1(batch_scores, gt_all)
+                loss2 = criterion.criterion2(p1, p2)
+                loss3 = criterion.criterion2(n1, n2)
+                loss4 = criterion.criterion2(simi, gt_all)
+                loss5 = criterion.criterion3(f, target)
+                loss7, xent_optimizer, xenter_loss = criterion.criterion5(center_feature, gt_all)
+
+                loss6 = sum(criterion.criterion4(family_id_dict[j], target) for j in range(4))
+
+                # Compute final model loss
+                model_loss = bce_weight * (loss1 + 5 * loss2 + 0.6 * loss3 + loss4 + loss5 + loss6) + ccl_weight * loss7
+                model_losses.append(model_loss)
+
+                # Backpropagation for the model
+                model_loss.backward(retain_graph=True)  # Retain graph for the next backward pass
+                optimizers[i].step()
+
+                if ccl_weight != 0:
+                    for param in xenter_loss.parameters():
+                        param.grad.data *= (1. / ccl_weight)
+                xent_optimizer.step()
+
+            # Convert model outputs into tensor and pass through MLP
+            model_outputs = torch.stack(model_outputs, dim=1).squeeze(-1)
+            final_output = mlp(model_outputs)
+
+            # Compute accuracy
+            preds = final_output > 0.5
+            epoch_train_acc += (preds == (gt_all > 0.5)).sum().item()
+            nb_data += gt_all.size(0)
+
+            # Compute MLP loss
+            mlp_optimizer.zero_grad()
+            mlp_loss = criterion.criterion1(final_output, gt_all)
+            mlp_loss.backward()  # Now the graph is still intact due to retain_graph=True
+            mlp_optimizer.step()
+
+            # Accumulate total loss for logging
+            total_loss = sum(model_losses) + mlp_loss
+            epoch_loss += total_loss.detach().item()
+
+        # Update schedulers at the end of the epoch
+        for scheduler in schedulers:
+            scheduler.step()
+
+        # Normalize loss and accuracy
+        epoch_loss /= len(train_loader)
+        epoch_train_acc /= nb_data
+
+        print(f"Fold {fold_num}, Epoch {epoch}, Loss: {epoch_loss:.4f}, Accuracy: {epoch_train_acc:.4f}")
+
+
+def evaluate_ensemble(models, mlp, data_loader, criterion, device):
+    # Set models and MLP to evaluation mode
+    for model in models:
+        model.eval()
+    mlp.eval()
+
+    epoch_test_loss = 0
+    epoch_test_acc = 0
+    nb_data = 0
+
+    with torch.no_grad():
+        for iter, (batch_x1, batch_x2, batch_labels, _, _) in enumerate(data_loader):
+
+            batch_x1, batch_x2, batch_labels = batch_x1.to(device), batch_x2.to(device), batch_labels.to(device)
+            gt_all = batch_labels.view(-1, 1).float()
+
+            # Forward pass through each model
+            model_outputs = []
+            for model in models:
+                batch_scores, f_parent, f_child, family_id_dict, center_feature = model(batch_x1, batch_x2)
+                model_outputs.append(batch_scores)
+
+            # Stack outputs from models and pass through MLP
+            model_outputs = torch.stack(model_outputs, dim=1).squeeze(-1)  # Shape: (batch_size, num_models)
+            final_output = mlp(model_outputs)
+
+            # Compute accuracy
+            preds = final_output > 0.5
+            epoch_test_acc += float(torch.sum(preds == (gt_all > 0.5)))
+            nb_data += float(gt_all.size(0))
+
+            # Compute MLP loss
+            J = criterion.criterion1(final_output, gt_all)
+            epoch_test_loss += J.detach().item()
+
+        # Average the losses and accuracy
+        epoch_test_loss /= (iter + 1)
+        epoch_test_acc /= nb_data
+
+    return epoch_test_loss, epoch_test_acc
+
 
 def train_residual_vgg(model, data_loader, criterion, optimizer, device, ccl_weight, bce_weight, epoch):
     model.train()

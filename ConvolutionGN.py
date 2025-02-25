@@ -121,9 +121,9 @@ class ConvolutionGGN(nn.Module):
             child_gnn_feature_lst.append(child)
 
         parent_mean = torch.cat(
-            (parent_gnn_feature_lst[0], parent_gnn_feature_lst[1], parent_gnn_feature_lst[2], parent_gnn_feature_lst[3]), dim=1)
+            (parent_gnn_feature_lst[0], parent_gnn_feature_lst[1], parent_gnn_feature_lst[2]), dim=1)
         child_mean = torch.cat(
-            (child_gnn_feature_lst[0], child_gnn_feature_lst[1], child_gnn_feature_lst[2], child_gnn_feature_lst[3]), dim=1)
+            (child_gnn_feature_lst[0], child_gnn_feature_lst[1], child_gnn_feature_lst[2]), dim=1)
 
         y, center_feature = self.MLP_layer(parent_mean, child_mean)
 

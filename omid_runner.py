@@ -8,16 +8,24 @@ os.environ['DGLBACKEND'] = 'pytorch'  # tell DGL what backend to use
 import torch.nn as nn
 import torch
 from torch.utils.data import DataLoader
-from utils_residual_gnn import set_seed, seed_worker, set_device, reset_weights, myoptimizer, Criterion
+from utils_residual_gnn import evaluate_ensemble, set_seed, seed_worker, set_device, reset_weights, myoptimizer, Criterion, train_ensemble
 from utils_residual_gnn import train_residual_vgg, evaluate_metric
 from utils_residual_gnn import save_checkpoint, load_checkpoint
 from utils_residual_gnn import features_collate4metric as collate
-
+# Enable anomaly detection to identify the exact issue
+torch.autograd.set_detect_anomaly(True)
 from data_loading import KinFeaturetDataset
 from GNN_Residual_VGG import GNN_Residual_VGG
 import csv
 import settings as st
 cnt = 0
+model_types = {
+    'full_face': 0,
+    'right_eye': 1,
+    'left_eye': 2,
+    'nose': 3,
+    'mouth': 4,
+}
 """change made by OMiD"""
 def write_details(path, fold_num, epoch, train_acc, test_acc, my_loss, BCE, MSEP, MSEN, MSEC, triplet, cross):
     with open(path, mode='a', newline='') as file:
@@ -108,7 +116,7 @@ def save_config(dir):
         file.writelines(lines)  
 
 # Function to train a model for one fold
-def train_fold(fold_num, model, trn_dataloader, tst_dataloader, optimizer, scheduler, n_epochs, criterion, DEVICE, detail_path):
+def train_fold(fold_num, models, mlp, trn_dataloader, tst_dataloader, optimizers,mlp_optimizer, schedulers, n_epochs, criterion, DEVICE, detail_path):
 
     """Change made by omid"""
     bce_weight = st.BCE_STARTING_WEIGHT        # 1
@@ -119,18 +127,12 @@ def train_fold(fold_num, model, trn_dataloader, tst_dataloader, optimizer, sched
     
     
     for epoch in range(n_epochs):
-        model.isTrain = True
         start = time.time()
-        train_loss, train_acc, my_loss, bce, msep, msen, msec, triplet, cross = train_residual_vgg(
-            model, trn_dataloader, criterion, optimizer, DEVICE, ccl_weight, bce_weight, epoch)
-        model.isTrain = False
         
-        # Test model
-        test_loss, test_acc = evaluate_metric(model, tst_dataloader, criterion, DEVICE)
-        scheduler.step()
-
-        # Write details to CSV
-        write_details(detail_path, fold_num, epoch+1, train_acc, test_acc, my_loss, bce, msep, msen, msec, triplet, cross)
+        train_ensemble(fold_num, models, mlp, trn_dataloader, optimizers, mlp_optimizer, schedulers, n_epochs, criterion, DEVICE, detail_path, ccl_weight, bce_weight)
+        
+        tloss, tacc = evaluate_ensemble(models, mlp, tst_dataloader, criterion, DEVICE)
+        print(tloss, tacc)
 
         bce_weight *= bce_decay_rate
         ccl_weight *= ccl_decay_rate
@@ -158,7 +160,7 @@ def run_training_for_folds(dir):
     # Parameters
     n_epochs = st.EPOCHS  # or 60, based on your choice
     batch_size = st.BATCH_SIZE
-    input_dim = 3584#1152#3200#4736#2688
+    input_dim = 1536#1152#3200#4736#2688
     output_dim = 1
     
         # Evaluate the accuracy across folds
@@ -187,8 +189,8 @@ def run_training_for_folds(dir):
         #features_file = 'resnet-residual-facenet-kinfacewi-1152.npz'
         #features_file = 'features-vggface2-resnet-residual_2688.npz'
         #features_file = 'vggface2-resnet-residual-kinfacewi-2688.npz'
-        #feature_file = "merged-resnet64-resnet1024-kinfacewi-1536.npz"
-        features_file = 'merged-resnet64-resnet1024-vggface1024-kinfacewi-3584.npz'
+        features_file = "merged-resnet64-resnet1024-kinfacewi-1536.npz"
+        # features_file = 'merged-resnet64-resnet1024-vggface1024-kinfacewi-3584.npz'
         #features_file = 'features-vggface2-resnet-residual_1024_64_2688.npz'
         features_file_fullpath = os.path.join(data_path, features_file)
 
@@ -203,16 +205,6 @@ def run_training_for_folds(dir):
             torch.cuda.empty_cache()
             gc.collect()
 
-            # Reset model, optimizer, and scheduler for each fold
-            model = GNN_Residual_VGG(input_dim, output_dim).to(DEVICE)
-            reset_weights(model)                                            # 1e-4
-            optimizer = myoptimizer(model, {'lr': 1e-4, 'weight_decay': 0})
-            lr_milestones = [ 20, 40, 60,90, 120, 150, 200]
-            lr_decay = 0.5 ## learning rate decay
-            scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones, gamma=lr_decay)
-            # scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20, 30], gamma=0.5)
-            criterion = Criterion()
-
             # Load datasets
             trn_set = KinFeaturetDataset(csv_metadata_file_fullpath, features_file_fullpath, isTrain=True, fold_num=fold_num)
             tst_set = KinFeaturetDataset(csv_metadata_file_fullpath, features_file_fullpath, isTrain=False, fold_num=fold_num)
@@ -220,8 +212,37 @@ def run_training_for_folds(dir):
             trn_dataloader = DataLoader(trn_set, batch_size=batch_size, shuffle=True, collate_fn=collate, worker_init_fn=seed_worker)
             tst_dataloader = DataLoader(tst_set, batch_size=batch_size, shuffle=False, collate_fn=collate, worker_init_fn=seed_worker)
 
+
+            lr_decay = 0.5 ## learning rate decay
+            lr_milestones = [ 20, 40, 60,90, 120, 150, 200]
+            
+            models = [GNN_Residual_VGG(input_dim, output_dim, (type, index)).to(DEVICE) for type, index in model_types.items()]
+            optimizers = [myoptimizer(model, {'lr': 1e-4, 'weight_decay': 0}) for model in models]
+            schedulers = [torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=lr_milestones, gamma=lr_decay) for optimizer in optimizers]
+            criterion = Criterion()
+            
+            # Define a simple MLP to process model outputs
+            class EnsembleMLP(nn.Module):
+                def __init__(self, num_models):
+                    super(EnsembleMLP, self).__init__()
+                    self.fc = nn.Sequential(
+                        nn.Linear(num_models, 16),  # First hidden layer
+                        nn.ReLU(),
+                        nn.Linear(16, 8),  # Second hidden layer
+                        nn.ReLU(),
+                        nn.Linear(8, 1),  # Output layer
+                        nn.Sigmoid()
+                    )
+
+                def forward(self, x):
+                    return self.fc(x)
+
+            mlp = EnsembleMLP(num_models=len(models)).to(DEVICE)
+
+            mlp_optimizer = torch.optim.Adam(mlp.parameters(), lr=1e-3)
+
             # Train the model for this fold
-            train_fold(fold_num, model, trn_dataloader, tst_dataloader, optimizer, scheduler, n_epochs, criterion, DEVICE, detail_path)
+            train_fold(fold_num, models, mlp, trn_dataloader, tst_dataloader, optimizers, mlp_optimizer, schedulers, n_epochs, criterion, DEVICE, detail_path)
             
             
             # Delete model and related objects after fold training
