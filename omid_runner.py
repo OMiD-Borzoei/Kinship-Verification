@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch
 from torch.utils.data import DataLoader
 from utils_residual_gnn import set_seed, seed_worker, set_device, reset_weights, myoptimizer, Criterion
-from utils_residual_gnn import train_residual_vgg, evaluate_metric
+from utils_residual_gnn import train_residual_vgg, evaluate_metric, model_size
 from utils_residual_gnn import save_checkpoint, load_checkpoint
 from utils_residual_gnn import features_collate4metric as collate
 
@@ -124,6 +124,7 @@ def train_fold(fold_num, model, trn_dataloader, tst_dataloader, optimizer, sched
         train_loss, train_acc, my_loss, bce, msep, msen, msec, triplet, cross = train_residual_vgg(
             model, trn_dataloader, criterion, optimizer, DEVICE, ccl_weight, bce_weight, epoch)
         model.isTrain = False
+        print(f'\r{time.time() - start:.3f}', end='', flush=True)
         
         # Test model
         test_loss, test_acc = evaluate_metric(model, tst_dataloader, criterion, DEVICE)
@@ -138,7 +139,6 @@ def train_fold(fold_num, model, trn_dataloader, tst_dataloader, optimizer, sched
         if cnt==0:
             os.system('cls')
             cnt +=1 
-        print(f'\r{time.time() - start:.3f}', end='', flush=True)
 
         # Optionally save the model if needed
         # if test_acc > max_acc:
@@ -158,7 +158,7 @@ def run_training_for_folds(dir):
     # Parameters
     n_epochs = st.EPOCHS  # or 60, based on your choice
     batch_size = st.BATCH_SIZE
-    input_dim = 3584#1152#3200#4736#2688
+    input_dim = 2688#1152#3200#4736#2688
     output_dim = 1
     
         # Evaluate the accuracy across folds
@@ -187,9 +187,9 @@ def run_training_for_folds(dir):
         #features_file = 'resnet-residual-facenet-kinfacewi-1152.npz'
         #features_file = 'features-vggface2-resnet-residual_2688.npz'
         #features_file = 'vggface2-resnet-residual-kinfacewi-2688.npz'
-        #feature_file = "merged-resnet64-resnet1024-kinfacewi-1536.npz"
-        features_file = 'merged-resnet64-resnet1024-vggface1024-kinfacewi-3584.npz'
-        #features_file = 'features-vggface2-resnet-residual_1024_64_2688.npz'
+        # features_file = "merged-resnet64-resnet1024-kinfacewi-1536.npz"
+        # features_file = 'merged-resnet64-resnet1024-vggface1024-kinfacewi-3584.npz'
+        features_file = 'features-vggface2-resnet-residual_1024_64_2688.npz'
         features_file_fullpath = os.path.join(data_path, features_file)
 
         if not st.config[st.I]["SEPERATE_RUN"]:
@@ -205,7 +205,11 @@ def run_training_for_folds(dir):
 
             # Reset model, optimizer, and scheduler for each fold
             model = GNN_Residual_VGG(input_dim, output_dim).to(DEVICE)
-            reset_weights(model)                                            # 1e-4
+            # torch.save(model.state_dict(), "model.pth")
+            # model_size_mb = sum(p.numel() * p.element_size() for p in model.parameters()) / (1024 * 1024)
+            # print(f"Estimated model size: {model_size_mb:.2f} MB")
+            # print(model_size(model))
+            # reset_weights(model)                                            # 1e-4
             optimizer = myoptimizer(model, {'lr': 1e-4, 'weight_decay': 0})
             lr_milestones = [ 20, 40, 60,90, 120, 150, 200]
             lr_decay = 0.5 ## learning rate decay

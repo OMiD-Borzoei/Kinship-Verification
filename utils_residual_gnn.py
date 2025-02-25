@@ -192,6 +192,10 @@ def first_collate(samples):
 
     return x1_batch, x2_batch, labels
 
+def model_size(model):
+    return sum(p.numel() for p in model.parameters())
+    
+
 # Compute accuracy
 def accuracy(logits, targets):
     preds = logits.detach().argmax(dim=1)
@@ -283,7 +287,7 @@ def train_residual_vgg(model, data_loader, criterion, optimizer, device, ccl_wei
         loss5 = criterion.criterion3(f, target)  # tripletloss: Three yuan loss /alpha 0.5
         loss7, xent_optimizer, xenter_loss = criterion.criterion5(center_feature, gt_all) # Center loss
 
-        num_part = 4
+        num_part = 3
         loss6 = criterion.criterion4(family_id_dict[0], target)
         for i in range(num_part - 1):
             loss6 += criterion.criterion4(family_id_dict[i + 1], target)

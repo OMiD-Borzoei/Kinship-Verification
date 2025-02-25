@@ -2,7 +2,7 @@ from random import choice
 import numpy as np
 import networkx as nx
 import torch
-from torch import T, Tensor
+from torch import Tensor
 import torch.nn as nn
 
 import dgl
@@ -26,7 +26,7 @@ class GNN_Residual_VGG(nn.Module):
         self.list_graph_creation = [func for func in dir(GNN_Residual_VGG) if callable(
             getattr(GNN_Residual_VGG, func)) and func.startswith("create_graph_")]
 
-        self.part = 4
+        self.part = 3
         member_features_list = []
         layer_size = self.input_dim
         while (layer_size >= 32):
