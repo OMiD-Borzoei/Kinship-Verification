@@ -111,10 +111,10 @@ class ConvolutionGGN(nn.Module):
 
             num_features = H.shape[1]
 
-            parent = H.reshape(g.batch_size, -1, num_features)[:, 0:-1:2, :]
+            parent = H.reshape(g.batch_size, -1, num_features)[:, 1::2, :]
             parent = torch.mean(parent, dim=1)
 
-            child = H.reshape(g.batch_size, -1, num_features)[:, 1:-1:2, :]
+            child = H.reshape(g.batch_size, -1, num_features)[:, 1::2, :]
             child = torch.mean(child, dim=1)
 
             parent_gnn_feature_lst.append(parent)

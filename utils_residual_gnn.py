@@ -302,7 +302,7 @@ def train_ensemble(fold_num, models, mlp, train_loader, optimizers, mlp_optimize
 
                 if ccl_weight != 0:
                     for param in xenter_loss.parameters():
-                        param.grad.data *= (1. / ccl_weight)
+                        param.grad.data = param.grad.data * (1. / ccl_weight)
                 xent_optimizer.step()
 
             # Convert model outputs into tensor and pass through MLP
